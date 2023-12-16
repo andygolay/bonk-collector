@@ -1,0 +1,251 @@
+<html>
+
+<head>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --doc-height: 100vh;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      /* align-items: center; */
+      align-items: flex-start;
+      height: var(--doc-height);
+      width: 100vw;
+      margin: 0;
+      background: #202124;
+    }
+
+    #player {
+      position: relative;
+      display: flex;
+      flex: 1;
+      width: 100vw;
+      height: 100%;
+      justify-content: center;
+      align-items: center;
+      background: #202124;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain;
+      margin: auto;
+      background-color: #202124;
+      image-rendering: pixelated;
+      outline: none;
+    }
+
+    p {
+      color: #fff;
+      font-size: 100px;
+    }
+  </style>
+</head>
+<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+
+<script type="module">
+  import init, * as turbo from "/pkg/turbo_genesis_host_wasm_bindgen.js";
+ 
+  /**************************************************/
+  /* CONFIGURATION                                  */
+  /**************************************************/
+
+  // The same name that appears in Cargo.toml
+  const GAME_NAME = "hello_world";
+
+  // This is where the game is compiled to
+  // cargo build --target wasm32-unknown-unknown will output a "debug" build by default
+  // If you add the --release (or -r) flag to the command, it will output a "release" build
+  const BUILD = "debug"; //  either "release" or "debug"
+  
+  // The game's resolution
+  const RESOLUTION = [256, 144];
+
+  // Add sprites to this array
+  // Example: "/sprites/my-sprite.png"
+  const SPRITES = [
+  "/sprites/taco.png",
+  "/sprites/munch_cat.png",
+  "/sprites/heart.png"
+  ];
+
+  /**************************************************/
+  
+  const web3 = solanaWeb3;
+  const keypair = web3.Keypair.generate();
+  const b58Chars =
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  // prettier-ignore
+  const toBase58 = function (B, A = b58Chars) { var d = [], s = "", i, j, c, n; for (i in B) { j = 0, c = B[i]; s += c || s.length ^ i ? "" : 1; while (j in d || c) { n = d[j]; n = n ? n * 256 + c : c; c = n / 58 | 0; d[j] = n % 58; j++ } } while (j--) s += A[d[j]]; return s };
+  // prettier-ignore
+  const fromBase58 = function (S, A = b58Chars) { var d = [], b = [], i, j, c, n; for (i in S) { j = 0, c = A.indexOf(S[i]); if (c < 0) return undefined; c || b.length ^ i ? i : b.push(0); while (j in d || c) { n = d[j]; n = n ? n * 58 + c : c; c = n >> 8; d[j] = n % 256; j++ } } while (j--) b.push(d[j]); return new Uint8Array(b) };
+  console.log(toBase58(keypair.secretKey));
+
+  const toString = (buf) =>
+    buf.reduce((acc, a) => acc + String.fromCharCode(a), "");
+
+  window.solSendTransaction = async (b) => {
+    let feePayer;
+    console.log("solSendTransaction", b);
+    const buf = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+    console.log(buf);
+    const tx = new web3.Transaction();
+    let n = 0;
+    const numIxs = buf[n];
+    console.log({ numIxs });
+    n += 4;
+    for (let i = 0; i < numIxs; i++) {
+      const programIdLen = buf[n];
+      n += 4;
+      let programId = toString(buf.subarray(n, n + programIdLen));
+      console.log({ programIdLen, programId });
+      n += programIdLen;
+      const accountMetaLen = buf[n];
+      n += 4;
+      console.log({ accountMetaLen });
+      const keys = [];
+      for (let j = 0; j < accountMetaLen; j++) {
+        const pubkeyLen = buf[n];
+        n += 4;
+        let pubkey = new web3.PublicKey(
+          toString(buf.subarray(n, n + pubkeyLen))
+        );
+        n += pubkeyLen;
+        let isSigner = buf[n] === 1;
+        if (isSigner) feePayer = pubkey;
+        n += 1;
+        let isWritable = buf[n] === 1;
+        n += 1;
+        keys.push({ pubkey, isSigner, isWritable });
+      }
+      const dataLen = buf[n];
+      n += 4;
+      const data = buf.subarray(n, n + dataLen);
+      console.log({ programId, keys, data });
+      // programId, keys, data
+      const ix = new web3.TransactionInstruction({
+        programId,
+        keys,
+        data,
+      });
+      tx.add(ix);
+    }
+    /// TODO: submit
+    tx.feePayer = feePayer;
+    const blockhash = await fetch("http://localhost:8899/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "getLatestBlockhash",
+        params: [{ commitment: "processed" }],
+      }),
+    })
+      .then((x) => x.json())
+      .then((x) => x.result.value.blockhash);
+    tx.recentBlockhash = blockhash;
+    console.log(tx);
+
+    const signerKeypair = web3.Keypair.fromSecretKey(
+      fromBase58("!!!!!!!!!!!!!!!!!!!!")
+    );
+    console.log("KEYPAIR", signerKeypair);
+    const signature = await web3.sendAndConfirmTransaction(
+      new web3.Connection("http://devnet.solana.com", "processed"),
+      tx,
+      [signerKeypair]
+    );
+
+    // const res = await solana.signAndSendTransaction(tx);
+    // console.log(res);
+    // const { signature } = res;
+    while (true) {
+      const res = await fetch("http://devnet.solana.com", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getSignatureStatuses",
+          params: [[signature], { searchTransactionHistory: false }],
+        }),
+      });
+      const json = await res.json();
+      const status = json.result?.value?.[0]?.confirmationStatus;
+      console.log(status);
+      if (status === "confirmed") {
+        break;
+      }
+    }
+    window.getMultipleAccounts.clear();
+  };
+  async function main() {
+    try {
+      console.log(solanaWeb3);
+      console.log(turbo);
+      await init();
+      const player = document.getElementById("player");
+
+      // Initialize a canvas for loading state
+      const loading = document.createElement("canvas");
+      player?.appendChild(loading);
+      var context = loading.getContext("2d");
+      context.fillStyle = "white";
+      context.font = "bold 14px Arial";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("Loading...", loading.width / 2, loading.height / 2);
+
+      // Fetch assets
+      const spriteData = await Promise.all(
+        SPRITES.map(async (src) => {
+          let res = await fetch(src);
+          let buf = await res.arrayBuffer();
+          return [src.replace("/sprites/", "").replace(".png", ""), buf];
+        })
+      );
+
+      // Remove loading state
+      player?.removeChild(loading);
+
+      // Run game
+      const canvas = document.createElement("canvas");
+      player?.appendChild(canvas);
+      await turbo.run(canvas, spriteData, {
+        source: `/target/wasm32-unknown-unknown/${BUILD}/${GAME_NAME}.wasm`,
+        // source: "/target/wasm32-unknown-unknown/release/turbo_local_multiplayer.wasm",
+        meta: {
+          appName: "Hello, World!",
+          appVersion: "0.0.0",
+          appAuthor: "@jozanza",
+          appDescription: "testing wasm stuff",
+        },
+        config: {
+          resolution: RESOLUTION,
+          tileSize: [24, 24],
+          fps: 60,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  main();
+</script>
+
+<body>
+  <div id="player"></div>
+</body>
+
+</html>
