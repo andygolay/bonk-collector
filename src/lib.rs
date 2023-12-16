@@ -23,6 +23,7 @@ turbo::init! {
             x: f32,
             y: f32,
             radius: f32,
+            vel: f32,
         }>,
         score: u32,
     } = {
@@ -50,28 +51,34 @@ turbo::go! {
     if gamepad(0).right.pressed() {
         state.dog_x += 2.;
     }
-    if gamepad(0).up.pressed() {
-        state.dog_y -= 2.;
-    }
-    if gamepad(0).down.pressed() {
-        state.dog_y += 2.;
-    }
 
     // Generate new coins at random intervals
     if rand() % 64 == 0 {
         // Create a new coin with random attributes
         let coin = Coin {
             x: (rand() % 256) as f32,
-            y: (rand() % 144) as f32,
+            y: 0.0,
             radius: (rand() % 10 + 5) as f32,
+            vel: (rand() % 3 + 1) as f32,
         };
         state.coins.push(coin);
     }
 
+    if rand() % 64 == 0 {
+            // Create a new coin with random attributes
+            let coin = Coin {
+                x: (rand() % 256) as f32,
+                y: 0.0,
+                radius: (rand() % 10 + 5) as f32,
+                vel: (rand() % 3 + 1) as f32,
+            };
+            state.coins.push(coin);
+        }
+
     // Update coin positions and check for collisions with the dog
     let dog_center = (state.dog_x + state.dog_r, state.dog_y + state.dog_r);
     state.coins.retain_mut(|coin| {
-
+        coin.y += coin.vel;
         // Check for collision with the dog
         let coin_center = (coin.x + coin.radius, coin.y + coin.radius);
 
